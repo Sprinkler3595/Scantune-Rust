@@ -1,0 +1,56 @@
+[package]
+name = "scantune"
+version = "0.1.0"
+description = "ScanTune — gestion d'inventaire IT Intune (multiplateforme)"
+authors = ["Marcio Domingues"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "scantune_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+anyhow = "1"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+
+# OAuth2 (Authorization Code + PKCE, loopback) — multiplateforme.
+# Flux implémenté à la main (URL + échange de token via reqwest) pour
+# rester stable et indépendant des évolutions d'API d'une crate OAuth.
+url = "2"
+tiny_http = "0.12"
+open = "5"
+base64 = "0.22"
+sha2 = "0.10"
+rand = "0.8"
+
+# Cache de token chiffré via le trousseau de l'OS
+# (Windows Credential Manager / macOS Keychain / Linux Secret Service)
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+
+# Génération QR + décodage des images de template.
+# `jpeg` en plus de `png` : le logo importé par l'utilisateur peut être un JPEG.
+# Le QR et les images de template ressortent toujours en PNG (sans perte).
+qrcode = "0.14"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+# Exports
+rust_xlsxwriter = "0.79"
+printpdf = { version = "0.7", features = ["embedded_images"] }
+
+dirs = "5"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

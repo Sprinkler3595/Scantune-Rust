@@ -1,0 +1,19 @@
+# Node / frontend
+node_modules/
+dist/
+*.local
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Divers
+.DS_Store
+*.log
+app-icon.png
+
+# IDE (JetBrains)
+.idea/
+
+# Config locale avec identifiants Azure AD (ne jamais committer)
+appsettings.json
