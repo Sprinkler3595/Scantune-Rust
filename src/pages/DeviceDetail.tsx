@@ -91,12 +91,72 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/**
+ * Bannière d'alerte quand plusieurs appareils partagent le même numéro de série.
+ * Un numéro de série est censé être unique : un doublon signale en général un
+ * doublon d'inventaire (appareil ré-enrôlé, ré-imagé) ou une erreur de saisie.
+ */
+function DuplicateSerialWarning({
+  serial,
+  duplicates,
+  onOpen,
+}: {
+  serial: string;
+  duplicates: IntuneDevice[];
+  onOpen: (id: string) => void;
+}) {
+  if (duplicates.length === 0) return null;
+  const n = duplicates.length;
+  const total = n + 1; // les doublons + l'appareil affiché
+  return (
+    <div className="dup-warning" role="alert">
+      <div className="dup-head">
+        <span className="dup-ico">⚠</span>
+        <div>
+          <div className="dup-title">
+            Doublon de numéro de série détecté ({total} appareils)
+          </div>
+          <div className="dup-sub">
+            Le numéro de série <code>{serial}</code> est également porté par {n} autre
+            {n > 1 ? "s" : ""} appareil{n > 1 ? "s" : ""}. Un numéro de série devrait
+            être unique : vérifiez qu'il ne s'agit pas d'un doublon d'inventaire
+            (appareil ré-enrôlé ou ré-imagé) ou d'une erreur de saisie.
+          </div>
+        </div>
+      </div>
+      <div className="dup-list">
+        {duplicates.map((o) => (
+          <div className="dup-item" key={o.id}>
+            <div className="dup-item-main">
+              <span className="dup-name">{o.deviceName || "(sans nom)"}</span>
+              <span className="dup-meta">
+                👤 {o.userDisplayName || "Aucun utilisateur"} · 💻 {o.operatingSystem}{" "}
+                {o.osVersion} · {o.manufacturer} {o.model || "—"}
+              </span>
+              <span className="dup-meta">
+                🛡 {o.isCompliant ? "Conforme" : "Non conforme"} · ☁ Dernière sync{" "}
+                {relativeTime(o.lastSyncDateTime)}
+              </span>
+            </div>
+            <button className="ghost btn-sm dup-open" onClick={() => onOpen(o.id)}>
+              Ouvrir →
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function DeviceDetail() {
   const { id = "" } = useParams();
   const nav = useNavigate();
   const [device, setDevice] = useState<IntuneDevice | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Doublons de numéro de série : autres appareils portant la même série.
+  const [duplicates, setDuplicates] = useState<IntuneDevice[]>([]);
 
   // BitLocker
   const [keys, setKeys] = useState<BitLockerRecoveryKey[]>([]);
@@ -114,9 +174,33 @@ export default function DeviceDetail() {
 
   useEffect(() => {
     setLoading(true);
+    setDuplicates([]);
     api
       .getDevice(id)
-      .then(setDevice)
+      .then((dev) => {
+        setDevice(dev);
+        // Détection des doublons : on compare la série (normalisée) à toute la
+        // liste, servie depuis le cache. Best-effort — un échec ici ne doit pas
+        // empêcher l'affichage de la fiche.
+        const serial = (dev?.serialNumber || "").trim();
+        if (dev && serial) {
+          const key = serial.toLowerCase();
+          api
+            .getDevices()
+            .then((all) => {
+              setDuplicates(
+                all.filter(
+                  (o) =>
+                    o.id !== dev.id &&
+                    (o.serialNumber || "").trim().toLowerCase() === key
+                )
+              );
+            })
+            .catch(() => {
+              /* détection de doublon indisponible : on ignore silencieusement */
+            });
+        }
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, [id]);
@@ -228,6 +312,13 @@ export default function DeviceDetail() {
         )}
       </div>
 
+      {/* Alerte doublon de numéro de série */}
+      <DuplicateSerialWarning
+        serial={d.serialNumber}
+        duplicates={duplicates}
+        onOpen={(otherId) => nav(`/devices/${otherId}`)}
+      />
+
       {/* Header */}
       <div className="detail-card">
         <div className="hero">
@@ -268,7 +359,20 @@ export default function DeviceDetail() {
         <div className="two-col">
           <div>
             <CopyField label="Nom de l'appareil" value={d.deviceName} />
-            <CopyField label="Numéro de série" value={d.serialNumber} />
+            <div className="field-label">
+              Numéro de série
+              {duplicates.length > 0 && (
+                <span className="dup-flag" title="Ce numéro de série est partagé par plusieurs appareils">
+                  ⚠ Doublon ×{duplicates.length + 1}
+                </span>
+              )}
+            </div>
+            <div className="copy-row">
+              <span className="field-value">{d.serialNumber || "—"}</span>
+              <button className="copy-btn" title="Copier" onClick={() => copyText(d.serialNumber)}>
+                ⧉
+              </button>
+            </div>
           </div>
           <div>
             <CopyField label="Azure AD Device ID" value={d.azureADDeviceId} />
