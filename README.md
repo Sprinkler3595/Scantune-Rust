@@ -12,13 +12,58 @@ l'application de gestion d'inventaire IT connectée à Microsoft Intune.
 | Composant | Technologie |
 |-----------|-------------|
 | Coquille app | [Tauri 2](https://tauri.app) (backend Rust + WebView système) |
-| Frontend | React 18 + TypeScript + Vite |
+| Frontend | React 19 + TypeScript + Vite 6 (routage : React Router 8) |
 | Graphiques | Recharts |
-| Auth | OAuth2 Authorization Code + PKCE (loopback), refresh token dans le trousseau OS |
-| API | Microsoft Graph REST (reqwest) |
-| QR codes / étiquettes | `qrcode` + `image` + `imageproc`/`ab_glyph` (texte) |
+| Auth | OAuth2 Authorization Code + PKCE (loopback `tiny_http`), refresh token dans le trousseau OS (`keyring`) |
+| API | Microsoft Graph REST (`reqwest` + rustls) |
+| QR codes | `qrcode` + `image` (PNG/JPEG) |
+| Étiquettes | Rendu HTML/CSS côté frontend, impression via le pilote système |
 | Excel | `rust_xlsxwriter` |
-| PDF | `printpdf` (rapports + planches d'étiquettes Avery) |
+| PDF | `printpdf` (rapport d'inventaire) |
+
+## Fonctionnalités
+
+- **Dashboard** : statistiques du parc (OS, conformité, etc.) avec graphiques.
+- **Appareils** : liste, recherche, filtres, fiche détaillée avec applications
+  détectées et clés de récupération **BitLocker** (affichage à la demande).
+- **Alerte de doublon de numéro de série** : la fiche appareil compare la série
+  (normalisée) à tout le parc et signale les autres appareils qui portent le
+  même numéro — symptôme classique d'un ré-enrôlement, d'un ré-imagage ou
+  d'une erreur de saisie.
+- **Utilisateurs** : liste, recherche, fiche détaillée Entra ID.
+- **Inventaire** : exports CSV, Excel (appareils et utilisateurs) et rapport
+  PDF.
+- **QR / Étiquettes** : recherche, filtres OS/conformité/société, sélection
+  multiple, aperçu, export PNG (unitaire et par lot) et impression
+  d'étiquettes (voir ci-dessous).
+
+## Étiquettes : éditeur de template + impression pilote
+
+Le module d'étiquettes a été repensé par rapport au WPF (qui composait des
+planches Avery en PDF) :
+
+- **Éditeur de template visuel** (`src/components/LabelEditor.tsx`) : on pose
+  librement des éléments — QR, champs de l'appareil, texte libre, images/logo —
+  sur l'étiquette. Positions et tailles sont exprimées **en pourcentages** de
+  la boîte étiquette : aucun pixel, DPI ni millimètre dans le modèle
+  (`src-tauri/src/label_template.rs`).
+- **Le pilote d'imprimante décide de la taille** (`@page { size: auto }`) :
+  changer de rouleau ne demande ni migration ni recompilation. Le QR reste
+  carré via `aspect-ratio: 1`, la police est en unités `cqh`.
+- **Mire de calibration** (`src/components/PrintCalibration.tsx`) : page de
+  test à imprimer avant de dessiner un template, pour vérifier que le pilote
+  respecte le format, ne recadre pas, et que les unités `cqh` fonctionnent.
+- **Réglages image** : contraste, luminosité et seuillage noir/blanc pur
+  (adapté aux rubans résine), appliqués en filtres CSS — identiques à l'écran
+  et à l'impression.
+- **Portabilité** : le template (logo embarqué en data URI) s'exporte et
+  s'importe en JSON.
+- Le rendu écran (aperçu) et le rendu imprimé sont **le même composant**
+  (`LabelRender`), monté hors de l'app via un portail (`PrintPortal`) pour
+  l'impression.
+
+> ℹ️ Le contenu JSON encodé dans le QR est **identique à la version WPF**
+> (contrat figé à cinq clés) pour rester compatible avec ScanTune Mobile.
 
 ## Correspondance avec la version WPF
 
@@ -28,15 +73,15 @@ l'application de gestion d'inventaire IT connectée à Microsoft Intune.
 | `ConfigService` | `src-tauri/src/config.rs` |
 | `AuthService` (MSAL) | `src-tauri/src/auth.rs` (PKCE loopback) |
 | `GraphService` (SDK) | `src-tauri/src/graph.rs` (REST) |
-| `QRService` (hors Zebra) | `src-tauri/src/qr.rs` |
+| `QRService` (hors Zebra) | `src-tauri/src/qr.rs` (QR seul) + éditeur/rendu HTML côté frontend (`label_template.rs`, `LabelEditor`, `LabelRender`) |
 | `ExportService` | `src-tauri/src/export.rs` |
-| ~~`ZebraPrinterService`~~ | **retiré** (pas d'impression Zebra) |
+| ~~`ZebraPrinterService`~~ | **retiré** — remplacé par l'impression via le pilote système |
 | ViewModels | `src-tauri/src/commands.rs` + pages React |
-| Views (XAML) | `src/pages/*.tsx` |
+| Views (XAML) | `src/pages/*.tsx` (Dashboard, Devices, DeviceDetail, Users, UserDetail, Inventory, QRCodes, Settings, Login) |
 
 ## Prérequis
 
-- [Rust](https://rustup.rs) (toolchain stable) — ✅ déjà installé
+- [Rust](https://rustup.rs) (toolchain stable, ≥ 1.77) — ✅ déjà installé
 - [Node.js](https://nodejs.org) 18+ — ✅ déjà installé
 - WebView2 (Windows) — ✅ présent
 - Dépendances système Tauri sous Linux : voir https://tauri.app/start/prerequisites/
@@ -65,28 +110,48 @@ npm run tauri build  # produit un binaire natif (.exe / .app / .deb / .AppImage)
 
 Au premier lancement, va dans **Paramètres** et renseigne :
 - Tenant ID, Client ID de ton App Registration
-- Scopes (lecture seule) :
+- Scopes (lecture seule, valeurs par défaut) :
   - `DeviceManagementManagedDevices.Read.All`
   - `User.Read.All`
   - `Directory.Read.All`
   - `DeviceManagementConfiguration.Read.All`
 
+Les scopes `openid`, `profile` et `offline_access` (refresh token) sont
+ajoutés automatiquement. Pour lire les clés BitLocker, l'App Registration
+doit disposer des permissions Graph correspondantes
+(`BitLockerKey.Read.All`).
+
 > ⚠️ L'App Registration doit autoriser le **flux loopback** : ajoute
 > `http://localhost` comme URI de redirection de type *Mobile and desktop
 > applications* (Azure accepte n'importe quel port sur localhost pour ce type).
 
-La config est stockée dans le dossier de config utilisateur
-(`%APPDATA%\ScanTune\appsettings.json` sous Windows).
+Le refresh token est conservé dans le trousseau de l'OS : Windows Credential
+Manager / macOS Keychain / Linux Secret Service.
+
+## Fichiers de configuration
+
+Stockés dans le dossier de config utilisateur (`%APPDATA%\ScanTune\` sous
+Windows, `~/.config/ScanTune/` sous Linux, `~/Library/Application Support/ScanTune/`
+sous macOS) :
+
+| Fichier | Contenu |
+|---------|---------|
+| `appsettings.json` | Tenant/Client ID, scopes |
+| `label_template.json` | Template d'étiquette (fichier séparé, volontairement hors de la config : sauvegarder la config déconnecte l'utilisateur, pas le template) |
 
 ## État du portage
 
 ✅ Fondation complète : modèles, config, auth PKCE, client Graph, QR, exports
-CSV/Excel/PDF, **planches d'étiquettes PDF Avery** (3421 / 6126 / Standard /
-Petit) + export PNG (unitaire et par lot), dashboard, toutes les pages.
+CSV/Excel/PDF, dashboard, toutes les pages.
 
-❌ Pas d'impression Zebra (module retiré volontairement). Le module
-QR/Étiquettes reproduit celui du WPF : recherche, filtres OS/conformité/société,
-sélection multiple, aperçu, et exports PDF/PNG.
+✅ Module QR/Étiquettes : éditeur de template visuel, impression via le pilote
+système (format libre), mire de calibration, export PNG unitaire et par lot,
+import/export du template en JSON.
 
-🔜 Phase 2 : sélecteur de positions Avery (planche partiellement utilisée),
-raffinements UI (police d'icônes, thème Material complet).
+✅ Fiche appareil : applications détectées, clés BitLocker, alerte de doublon
+de numéro de série.
+
+❌ Pas d'impression Zebra (module retiré volontairement) : l'impression passe
+par n'importe quelle imprimante d'étiquettes vue par l'OS, via son pilote.
+
+🔜 Raffinements UI (police d'icônes, thème Material complet).
