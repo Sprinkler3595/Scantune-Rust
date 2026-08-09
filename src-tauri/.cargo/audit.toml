@@ -1,0 +1,20 @@
+# Configuration cargo-audit
+#
+# Advisories ignorés en connaissance de cause. À réévaluer lorsque les
+# dépendances parentes publient une version corrigée.
+
+[advisories]
+ignore = [
+    # lopdf < 0.42 : stack overflow sur PDF profondément imbriqués.
+    # lopdf est épinglé par printpdf 0.7 ; passer à printpdf >= 0.8
+    # implique une refonte de l'API dans export.rs. Risque limité :
+    # l'app génère des PDF, elle n'en parse pas de fichiers tiers.
+    "RUSTSEC-2026-0187",
+
+    # quick-xml < 0.41 : DoS (temps quadratique / allocation non bornée).
+    # quick-xml est épinglé par plist, lui-même épinglé par tauri-utils.
+    # Se corrigera via une mise à jour de tauri. Risque limité : plist
+    # sert aux manifestes macOS, l'app ne parse pas de XML non fiable.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
