@@ -1,0 +1,41 @@
+# Mises à jour automatiques des dépendances via Dependabot
+version: 2
+updates:
+  # Dépendances Rust (crate dans src-tauri/)
+  - package-ecosystem: cargo
+    directory: "/src-tauri"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - rust
+
+  # Dépendances npm (frontend React/Vite)
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - javascript
+    # Regrouper les mises à jour mineures/patch pour limiter le bruit
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Actions GitHub utilisées dans les workflows
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci
