@@ -136,7 +136,10 @@ pub async fn get_devices(
 }
 
 #[tauri::command]
-pub async fn get_device(state: State<'_, AppState>, id: String) -> CmdResult<Option<IntuneDeviceView>> {
+pub async fn get_device(
+    state: State<'_, AppState>,
+    id: String,
+) -> CmdResult<Option<IntuneDeviceView>> {
     let cfg = state.config_snapshot();
     let client = GraphClient::new(&state.auth, &cfg, state.http.clone());
     let d = client.device_by_id(&id).await.map_err(err)?;
@@ -172,7 +175,10 @@ async fn load_users(state: &AppState, force: bool) -> Result<Vec<EntraUser>, Str
 }
 
 #[tauri::command]
-pub async fn get_users(state: State<'_, AppState>, force: Option<bool>) -> CmdResult<Vec<EntraUser>> {
+pub async fn get_users(
+    state: State<'_, AppState>,
+    force: Option<bool>,
+) -> CmdResult<Vec<EntraUser>> {
     load_users(&state, force.unwrap_or(false)).await
 }
 
@@ -204,7 +210,10 @@ pub async fn get_device_apps(
 ) -> CmdResult<Vec<DetectedApp>> {
     let cfg = state.config_snapshot();
     let client = GraphClient::new(&state.auth, &cfg, state.http.clone());
-    client.detected_apps_for_device(&device_id).await.map_err(err)
+    client
+        .detected_apps_for_device(&device_id)
+        .await
+        .map_err(err)
 }
 
 // --- BitLocker ---
@@ -229,7 +238,10 @@ pub async fn get_bitlocker_key_value(
 ) -> CmdResult<Option<String>> {
     let cfg = state.config_snapshot();
     let client = GraphClient::new(&state.auth, &cfg, state.http.clone());
-    client.bitlocker_key_value(&recovery_key_id).await.map_err(err)
+    client
+        .bitlocker_key_value(&recovery_key_id)
+        .await
+        .map_err(err)
 }
 
 // --- Dashboard ---
@@ -270,12 +282,18 @@ fn group_count(devices: &[IntuneDevice], key: impl Fn(&IntuneDevice) -> String) 
 }
 
 #[tauri::command]
-pub async fn dashboard_stats(state: State<'_, AppState>, force: Option<bool>) -> CmdResult<DashboardStats> {
+pub async fn dashboard_stats(
+    state: State<'_, AppState>,
+    force: Option<bool>,
+) -> CmdResult<DashboardStats> {
     let devices = load_devices(&state, force.unwrap_or(false)).await?;
     let total = devices.len();
     let compliant = devices.iter().filter(|d| d.is_compliant()).count();
     let non_compliant = total - compliant;
-    let stale = devices.iter().filter(|d| d.days_since_last_sync() > 30).count();
+    let stale = devices
+        .iter()
+        .filter(|d| d.days_since_last_sync() > 30)
+        .count();
     let compliance_rate = if total > 0 {
         ((compliant as f64 / total as f64 * 1000.0).round()) / 10.0
     } else {
@@ -299,11 +317,7 @@ pub async fn dashboard_stats(state: State<'_, AppState>, force: Option<bool>) ->
 
     let mut recent: Vec<&IntuneDevice> = devices.iter().collect();
     recent.sort_by(|a, b| b.enrolled_date_time.cmp(&a.enrolled_date_time));
-    let recently_enrolled = recent
-        .iter()
-        .take(10)
-        .map(|d| d.enrich())
-        .collect();
+    let recently_enrolled = recent.iter().take(10).map(|d| d.enrich()).collect();
 
     let stale_devices = devices
         .iter()
@@ -328,7 +342,10 @@ pub async fn dashboard_stats(state: State<'_, AppState>, force: Option<bool>) ->
 // --- QR ---
 
 #[tauri::command]
-pub async fn generate_qr_data_url(state: State<'_, AppState>, device_id: String) -> CmdResult<String> {
+pub async fn generate_qr_data_url(
+    state: State<'_, AppState>,
+    device_id: String,
+) -> CmdResult<String> {
     use base64::{engine::general_purpose::STANDARD, Engine};
     let devices = load_devices(&state, false).await?;
     let device = devices
@@ -481,7 +498,10 @@ pub async fn generate_qr_svgs(
                 .find(|d| &d.id == id)
                 .ok_or_else(|| format!("Appareil introuvable : {id}"))?;
             let svg = qr::generate_qr_svg(device).map_err(err)?;
-            Ok(format!("data:image/svg+xml;base64,{}", STANDARD.encode(svg)))
+            Ok(format!(
+                "data:image/svg+xml;base64,{}",
+                STANDARD.encode(svg)
+            ))
         })
         .collect()
 }

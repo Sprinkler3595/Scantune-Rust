@@ -478,7 +478,11 @@ fn log_auth(msg: &str) {
     use std::io::Write;
     eprintln!("[scantune-auth] {msg}");
     let path = std::env::temp_dir().join("scantune-auth.log");
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
         let _ = writeln!(f, "{msg}");
     }
 }

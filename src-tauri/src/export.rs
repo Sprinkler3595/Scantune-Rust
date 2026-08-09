@@ -49,7 +49,7 @@ pub fn export_csv(devices: &[IntuneDevice], path: &str) -> Result<()> {
             .enrolled_date_time
             .map(|t| t.format("%d/%m/%Y").to_string())
             .unwrap_or_default();
-        let notes = d.notes.replace('\r', " ").replace('\n', " ");
+        let notes = d.notes.replace(['\r', '\n'], " ");
 
         let cols = [
             csv_escape(&d.device_name),
@@ -93,10 +93,23 @@ pub fn export_devices_xlsx(devices: &[IntuneDevice], path: &str) -> Result<()> {
     ws.set_name("Inventaire Devices")?;
 
     let headers = [
-        "Nom", "Utilisateur", "UPN", "OS", "Version", "Modèle", "Fabricant",
-        "N° Série", "Compliance", "Dernière sync", "Enrollment",
-        "Stockage total (Go)", "Stockage libre (Go)", "Jours sans sync",
-        "Agent", "Catégorie", "Notes",
+        "Nom",
+        "Utilisateur",
+        "UPN",
+        "OS",
+        "Version",
+        "Modèle",
+        "Fabricant",
+        "N° Série",
+        "Compliance",
+        "Dernière sync",
+        "Enrollment",
+        "Stockage total (Go)",
+        "Stockage libre (Go)",
+        "Jours sans sync",
+        "Agent",
+        "Catégorie",
+        "Notes",
     ];
     for (c, h) in headers.iter().enumerate() {
         ws.write_with_format(0, c as u16, *h, &header_fmt)?;
@@ -131,8 +144,16 @@ pub fn export_devices_xlsx(devices: &[IntuneDevice], path: &str) -> Result<()> {
                 .map(|t| t.format("%d/%m/%Y").to_string())
                 .unwrap_or_default(),
         )?;
-        ws.write(row, 11, round1(d.total_storage_space_in_bytes as f64 / BYTES_PER_GB))?;
-        ws.write(row, 12, round1(d.free_storage_space_in_bytes as f64 / BYTES_PER_GB))?;
+        ws.write(
+            row,
+            11,
+            round1(d.total_storage_space_in_bytes as f64 / BYTES_PER_GB),
+        )?;
+        ws.write(
+            row,
+            12,
+            round1(d.free_storage_space_in_bytes as f64 / BYTES_PER_GB),
+        )?;
         let days = d.days_since_last_sync();
         if days > 30 {
             ws.write_with_format(row, 13, days as f64, &orange)?;
@@ -153,7 +174,10 @@ pub fn export_devices_xlsx(devices: &[IntuneDevice], path: &str) -> Result<()> {
 
     let compliant = devices.iter().filter(|d| d.is_compliant()).count();
     let non_compliant = devices.len() - compliant;
-    let stale = devices.iter().filter(|d| d.days_since_last_sync() > 30).count();
+    let stale = devices
+        .iter()
+        .filter(|d| d.days_since_last_sync() > 30)
+        .count();
 
     summary.write(2, 0, "Total devices")?;
     summary.write(2, 1, devices.len() as u32)?;
@@ -190,12 +214,21 @@ pub fn export_users_xlsx(users: &[EntraUser], path: &str) -> Result<()> {
     let ws = wb.add_worksheet();
     ws.set_name("Utilisateurs")?;
 
-    let header_fmt = Format::new().set_bold().set_background_color(Color::RGB(0xE8EAF6));
+    let header_fmt = Format::new()
+        .set_bold()
+        .set_background_color(Color::RGB(0xE8EAF6));
     let red = Format::new().set_font_color(Color::RGB(0xFF0000));
 
     let headers = [
-        "Nom", "UPN", "Email", "Poste", "Département", "Société",
-        "Téléphone", "Compte actif", "Nb devices",
+        "Nom",
+        "UPN",
+        "Email",
+        "Poste",
+        "Département",
+        "Société",
+        "Téléphone",
+        "Compte actif",
+        "Nb devices",
     ];
     for (c, h) in headers.iter().enumerate() {
         ws.write_with_format(0, c as u16, *h, &header_fmt)?;
@@ -230,11 +263,13 @@ pub fn generate_inventory_report(devices: &[IntuneDevice], path: &str) -> Result
     let now = Local::now();
     let compliant = devices.iter().filter(|d| d.is_compliant()).count();
     let non_compliant = devices.len() - compliant;
-    let stale = devices.iter().filter(|d| d.days_since_last_sync() > 30).count();
+    let stale = devices
+        .iter()
+        .filter(|d| d.days_since_last_sync() > 30)
+        .count();
     let total = devices.len();
 
-    let (doc, page1, layer1) =
-        PdfDocument::new("Inventaire IT", Mm(210.0), Mm(297.0), "Layer 1");
+    let (doc, page1, layer1) = PdfDocument::new("Inventaire IT", Mm(210.0), Mm(297.0), "Layer 1");
     let font = doc.add_builtin_font(BuiltinFont::Helvetica)?;
     let font_bold = doc.add_builtin_font(BuiltinFont::HelveticaBold)?;
 
@@ -296,7 +331,11 @@ pub fn generate_inventory_report(devices: &[IntuneDevice], path: &str) -> Result
     let mut os_sorted: Vec<_> = by_os.into_iter().collect();
     os_sorted.sort_by(|a, b| b.1.cmp(&a.1));
     for (os, count) in os_sorted {
-        let label = if os.is_empty() { "(vide)".to_string() } else { os };
+        let label = if os.is_empty() {
+            "(vide)".to_string()
+        } else {
+            os
+        };
         let opct = if total > 0 {
             round1(count as f64 / total as f64 * 100.0)
         } else {
@@ -348,9 +387,27 @@ pub fn generate_inventory_report(devices: &[IntuneDevice], path: &str) -> Result
             yy -= 6.0;
         }
         layer.use_text(truncate(&d.device_name, 28), 7.0, Mm(15.0), Mm(yy), &font);
-        layer.use_text(truncate(&d.user_display_name, 26), 7.0, Mm(70.0), Mm(yy), &font);
-        layer.use_text(truncate(&d.operating_system, 14), 7.0, Mm(120.0), Mm(yy), &font);
-        layer.use_text(truncate(&d.serial_number, 18), 7.0, Mm(150.0), Mm(yy), &font);
+        layer.use_text(
+            truncate(&d.user_display_name, 26),
+            7.0,
+            Mm(70.0),
+            Mm(yy),
+            &font,
+        );
+        layer.use_text(
+            truncate(&d.operating_system, 14),
+            7.0,
+            Mm(120.0),
+            Mm(yy),
+            &font,
+        );
+        layer.use_text(
+            truncate(&d.serial_number, 18),
+            7.0,
+            Mm(150.0),
+            Mm(yy),
+            &font,
+        );
         layer.use_text(
             if d.is_compliant() { "OK" } else { "NON" },
             7.0,
@@ -365,7 +422,13 @@ pub fn generate_inventory_report(devices: &[IntuneDevice], path: &str) -> Result
     let (p4, l4) = doc.add_page(Mm(210.0), Mm(297.0), "Layer 1");
     let syn = doc.get_page(p4).get_layer(l4);
     let mut sy = 270.0;
-    syn.use_text("Synthèse et observations", 22.0, Mm(20.0), Mm(sy), &font_bold);
+    syn.use_text(
+        "Synthèse et observations",
+        22.0,
+        Mm(20.0),
+        Mm(sy),
+        &font_bold,
+    );
     sy -= 18.0;
     if non_compliant > 0 {
         syn.use_text(

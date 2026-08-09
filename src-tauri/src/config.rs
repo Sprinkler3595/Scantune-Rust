@@ -58,7 +58,9 @@ struct AppSection {
 
 impl Default for AppSection {
     fn default() -> Self {
-        Self { read_only_mode: true }
+        Self {
+            read_only_mode: true,
+        }
     }
 }
 

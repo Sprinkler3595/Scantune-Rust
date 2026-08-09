@@ -222,7 +222,9 @@ impl<'a> GraphClient<'a> {
             display_name: Option<String>,
         }
         let me: Me = self.get_json(&format!("{GRAPH_BASE}/me")).await?;
-        Ok(me.display_name.unwrap_or_else(|| "Utilisateur inconnu".into()))
+        Ok(me
+            .display_name
+            .unwrap_or_else(|| "Utilisateur inconnu".into()))
     }
 
     // --- Appareils Intune ---
@@ -235,9 +237,8 @@ impl<'a> GraphClient<'a> {
     }
 
     pub async fn device_by_id(&self, id: &str) -> Result<Option<IntuneDevice>> {
-        let url = format!(
-            "{GRAPH_BASE}/deviceManagement/managedDevices/{id}?$select={DEVICE_SELECT}"
-        );
+        let url =
+            format!("{GRAPH_BASE}/deviceManagement/managedDevices/{id}?$select={DEVICE_SELECT}");
         let d: GraphDevice = self.get_json(&url).await?;
         Ok(Some(d.into()))
     }
@@ -298,17 +299,22 @@ impl<'a> GraphClient<'a> {
     /// Pas de `$select` : les propriétés sélectionnables de `detectedApp`
     /// diffèrent entre v1.0 et beta, et un `$select` invalide renverrait une
     /// 400. On désérialise tolérant (champs `Option`) et on trie par nom.
-    pub async fn detected_apps_for_device(&self, managed_device_id: &str) -> Result<Vec<DetectedApp>> {
+    pub async fn detected_apps_for_device(
+        &self,
+        managed_device_id: &str,
+    ) -> Result<Vec<DetectedApp>> {
         if managed_device_id.trim().is_empty() {
             return Ok(Vec::new());
         }
         let url = format!(
             "{GRAPH_BETA}/deviceManagement/managedDevices/{managed_device_id}/detectedApps?$top=100"
         );
-        let mut apps = self
-            .get_all::<GraphDetectedApp, DetectedApp>(url)
-            .await?;
-        apps.sort_by(|a, b| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()));
+        let mut apps = self.get_all::<GraphDetectedApp, DetectedApp>(url).await?;
+        apps.sort_by(|a, b| {
+            a.display_name
+                .to_lowercase()
+                .cmp(&b.display_name.to_lowercase())
+        });
         Ok(apps)
     }
 

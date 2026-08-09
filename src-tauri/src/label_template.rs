@@ -243,7 +243,8 @@ pub fn import_from(path: &str) -> Result<LabelTemplate> {
         anyhow::bail!("Ce fichier n'est pas un template d'étiquette ScanTune");
     }
 
-    serde_json::from_value(value).context("Template illisible (exporté par une version incompatible ?)")
+    serde_json::from_value(value)
+        .context("Template illisible (exporté par une version incompatible ?)")
 }
 
 /// Côté long de l'image stockée, en pixels.
@@ -265,14 +266,21 @@ pub fn load_image_data_url(path: &str) -> Result<String> {
 
     let img = image::open(path)?;
     let img = if img.width().max(img.height()) > IMAGE_MAX_PX {
-        img.resize(IMAGE_MAX_PX, IMAGE_MAX_PX, image::imageops::FilterType::Lanczos3)
+        img.resize(
+            IMAGE_MAX_PX,
+            IMAGE_MAX_PX,
+            image::imageops::FilterType::Lanczos3,
+        )
     } else {
         img
     };
 
     let mut buf = std::io::Cursor::new(Vec::new());
     img.write_to(&mut buf, ImageFormat::Png)?;
-    Ok(format!("data:image/png;base64,{}", STANDARD.encode(buf.into_inner())))
+    Ok(format!(
+        "data:image/png;base64,{}",
+        STANDARD.encode(buf.into_inner())
+    ))
 }
 
 #[cfg(test)]
@@ -346,7 +354,10 @@ mod tests {
     fn import_rejects_json_that_is_not_a_template() {
         for (name, body) in [
             ("scantune_empty.json", "{}"),
-            ("scantune_other.json", r#"{"tenantId":"abc","clientId":"def"}"#),
+            (
+                "scantune_other.json",
+                r#"{"tenantId":"abc","clientId":"def"}"#,
+            ),
             ("scantune_array.json", "[1, 2, 3]"),
         ] {
             let path = tmp(name, body);
