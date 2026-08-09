@@ -90,3 +90,32 @@ sélection multiple, aperçu, et exports PDF/PNG.
 
 🔜 Phase 2 : sélecteur de positions Avery (planche partiellement utilisée),
 raffinements UI (police d'icônes, thème Material complet).
+
+## Installateurs Windows (MSI / EXE)
+
+Un workflow GitHub Actions (`.github/workflows/build-windows.yml`) compile
+l'application sur une machine Windows et produit les deux installateurs :
+
+- **MSI** (WiX) — `src-tauri/target/release/bundle/msi/ScanTune_x.y.z_x64_fr-FR.msi`
+- **EXE** (NSIS) — `src-tauri/target/release/bundle/nsis/ScanTune_x.y.z_x64-setup.exe`
+
+Deux façons de les obtenir :
+
+1. **Manuellement** : onglet *Actions* → *Build Windows installers* →
+   *Run workflow*. Les installateurs sont téléchargeables dans les
+   *Artifacts* du run.
+2. **Par release** : pousser un tag `v*` (ex. `git tag v0.1.0 && git push origin v0.1.0`).
+   Le workflow crée automatiquement une release GitHub avec les deux
+   installateurs attachés.
+
+Pour compiler localement sur un poste Windows (Rust + Node installés) :
+
+```powershell
+npm ci
+npm run tauri -- build --bundles msi nsis
+```
+
+> ℹ️ Les installateurs ne sont pas signés (pas de certificat de signature de
+> code) : Windows SmartScreen affichera un avertissement au premier
+> lancement — cliquer sur *Informations complémentaires* → *Exécuter quand
+> même*.
