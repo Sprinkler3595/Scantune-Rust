@@ -78,6 +78,39 @@ Au premier lancement, va dans **Paramètres** et renseigne :
 La config est stockée dans le dossier de config utilisateur
 (`%APPDATA%\ScanTune\appsettings.json` sous Windows).
 
+## Suivi des mots de passe (alerte 6 mois)
+
+L'application lit la propriété Graph `lastPasswordChangeDateTime` de chaque
+compte Entra ID et en déduit l'ancienneté du mot de passe :
+
+| État | Condition (seuil par défaut : 180 j ≈ 6 mois) |
+|------|-----------------------------------------------|
+| ✅ OK | moins de 150 jours |
+| 🟠 Bientôt | entre 150 et 179 jours (30 j avant l'échéance) |
+| 🔴 À renouveler | 180 jours ou plus → **contacter l'utilisateur** |
+| ⚪ Inconnu | Entra ID ne renvoie pas la date (comptes synchronisés depuis un AD local, comptes de service…) |
+
+Où cela apparaît :
+
+- **Tableau de bord** : un compteur « Mots de passe > 6 mois » et la liste des
+  comptes à contacter, du plus ancien au plus récent (comptes désactivés exclus).
+- **Utilisateurs** : colonnes *Dernier chgt MdP* / *Ancienneté MdP*, filtre
+  dédié (à renouveler / échéance proche / date inconnue) et bandeau
+  d'avertissement indiquant le nombre de comptes concernés.
+- **Fiche utilisateur** : date du dernier changement, ancienneté relative et
+  bandeau d'alerte quand le seuil est franchi.
+- **Export Excel des utilisateurs** : colonnes *Dernier chgt mot de passe*,
+  *Ancienneté MdP (j)* et *Alerte MdP*.
+
+Le seuil se règle dans **Paramètres → Azure AD → Alerte mot de passe —
+ancienneté maximale (jours)** (stocké dans `appsettings.json`, section
+`app.passwordMaxAgeDays`). Une valeur nulle ou négative retombe sur 180 jours.
+
+> ℹ️ La lecture de `lastPasswordChangeDateTime` nécessite le scope
+> `User.Read.All` (déjà présent dans la configuration par défaut). Si le tenant
+> refuse cette propriété, la page Utilisateurs continue de fonctionner : la
+> requête est simplement rejouée sans elle et l'état affiché est « Inconnu ».
+
 ## État du portage
 
 ✅ Fondation complète : modèles, config, auth PKCE, client Graph, QR, exports

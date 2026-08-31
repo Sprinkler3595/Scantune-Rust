@@ -113,6 +113,21 @@ export default function Settings({ onSaved }: { onSaved?: () => void }) {
                 onChange={(e) => update({ scopes: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
               />
             </div>
+            <div className="field">
+              <label>Alerte mot de passe — ancienneté maximale (jours)</label>
+              <input
+                type="number"
+                min={1}
+                value={cfg.passwordMaxAgeDays}
+                onChange={(e) =>
+                  update({ passwordMaxAgeDays: Number(e.target.value) || 0 })
+                }
+              />
+              <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                Au-delà de ce délai, l'utilisateur est signalé comme « à contacter »
+                (180 j ≈ 6 mois). Un avertissement apparaît déjà 30 jours avant.
+              </p>
+            </div>
             <label className="row" style={{ gap: 8, marginBottom: 16 }}>
               <input
                 type="checkbox"

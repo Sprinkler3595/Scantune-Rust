@@ -36,6 +36,7 @@ pub fn run() {
             commands::get_users,
             commands::get_user,
             commands::search_users,
+            commands::password_alerts,
             commands::get_device_apps,
             commands::get_bitlocker_keys,
             commands::get_bitlocker_key_value,

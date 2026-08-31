@@ -23,6 +23,13 @@ enrolledDateTime,lastSyncDateTime,totalStorageSpaceInBytes,freeStorageSpaceInByt
 managementAgent,deviceRegistrationState,azureADDeviceId,deviceCategoryDisplayName,notes";
 
 const USER_SELECT: &str = "id,displayName,userPrincipalName,mail,jobTitle,department,\
+officeLocation,companyName,mobilePhone,accountEnabled,lastPasswordChangeDateTime";
+
+/// Repli sans `lastPasswordChangeDateTime` : la propriété n'est renvoyée que
+/// sur `$select` explicite et certains tenants (ou un jeton sans
+/// `User.Read.All`) répondent 400 dessus. Mieux vaut perdre la date de mot de
+/// passe que toute la page Utilisateurs.
+const USER_SELECT_LEGACY: &str = "id,displayName,userPrincipalName,mail,jobTitle,department,\
 officeLocation,companyName,mobilePhone,accountEnabled";
 
 /// Enveloppe de collection OData.
@@ -102,6 +109,7 @@ struct GraphUser {
     company_name: Option<String>,
     mobile_phone: Option<String>,
     account_enabled: Option<bool>,
+    last_password_change_date_time: Option<DateTime<Utc>>,
 }
 
 impl From<GraphUser> for EntraUser {
@@ -117,6 +125,7 @@ impl From<GraphUser> for EntraUser {
             company_name: u.company_name.unwrap_or_default(),
             mobile_phone: u.mobile_phone.unwrap_or_default(),
             account_enabled: u.account_enabled.unwrap_or(false),
+            last_password_change_date_time: u.last_password_change_date_time,
             devices: Vec::new(),
         }
     }
@@ -260,14 +269,38 @@ impl<'a> GraphClient<'a> {
 
     // --- Utilisateurs Entra ID ---
 
+    /// Joue une requête utilisateurs avec la date de dernier changement de mot
+    /// de passe, et rejoue sans elle si le tenant refuse la propriété.
+    async fn users_query(
+        &self,
+        url_for: impl Fn(&str) -> String,
+    ) -> Result<Vec<EntraUser>> {
+        match self
+            .get_all::<GraphUser, EntraUser>(url_for(USER_SELECT))
+            .await
+        {
+            Err(e) if rejects_password_property(&e) => {
+                self.get_all::<GraphUser, EntraUser>(url_for(USER_SELECT_LEGACY))
+                    .await
+            }
+            other => other,
+        }
+    }
+
     pub async fn all_users(&self) -> Result<Vec<EntraUser>> {
-        let url = format!("{GRAPH_BASE}/users?$select={USER_SELECT}&$top=100");
-        self.get_all::<GraphUser, EntraUser>(url).await
+        self.users_query(|select| format!("{GRAPH_BASE}/users?$select={select}&$top=100"))
+            .await
     }
 
     pub async fn user_by_id(&self, id: &str) -> Result<Option<EntraUser>> {
         let url = format!("{GRAPH_BASE}/users/{id}?$select={USER_SELECT}");
-        let u: GraphUser = self.get_json(&url).await?;
+        let u: GraphUser = match self.get_json::<GraphUser>(&url).await {
+            Err(e) if rejects_password_property(&e) => {
+                let url = format!("{GRAPH_BASE}/users/{id}?$select={USER_SELECT_LEGACY}");
+                self.get_json(&url).await?
+            }
+            other => other?,
+        };
         Ok(Some(u.into()))
     }
 
@@ -285,11 +318,11 @@ impl<'a> GraphClient<'a> {
             "startsWith(displayName,'{e}') or startsWith(userPrincipalName,'{e}') or startsWith(department,'{e}')",
             e = escaped
         );
-        let url = format!(
-            "{GRAPH_BASE}/users?$select={USER_SELECT}&$top=100&$filter={}",
-            urlencode(&filter)
-        );
-        self.get_all::<GraphUser, EntraUser>(url).await
+        let encoded = urlencode(&filter);
+        self.users_query(|select| {
+            format!("{GRAPH_BASE}/users?$select={select}&$top=100&$filter={encoded}")
+        })
+        .await
     }
 
     // --- Applications détectées ---
@@ -346,4 +379,11 @@ impl<'a> GraphClient<'a> {
 
 fn urlencode(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
+}
+
+/// Vrai quand Graph a rejeté la requête à cause du `$select` sur
+/// `lastPasswordChangeDateTime` (tenant ou permissions qui ne l'exposent pas).
+fn rejects_password_property(e: &anyhow::Error) -> bool {
+    let msg = e.to_string();
+    msg.contains("lastPasswordChangeDateTime") || msg.contains("LastPasswordChangeDateTime")
 }

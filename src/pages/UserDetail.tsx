@@ -1,7 +1,17 @@
 import { ReactNode, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { api, EntraUser } from "../api";
-import { ComplianceChip, ErrorBanner, Loading } from "../components/common";
+import {
+  ComplianceChip,
+  ErrorBanner,
+  Loading,
+  PasswordChip,
+  WarnBanner,
+  ageInDays,
+  fmtDate,
+  passwordLabel,
+  relativeTime,
+} from "../components/common";
 
 export default function UserDetail() {
   const { id = "" } = useParams();
@@ -39,6 +49,15 @@ export default function UserDetail() {
         {user.jobTitle} {user.department && `· ${user.department}`}
       </p>
 
+      {user.passwordAlert && (
+        <WarnBanner>
+          ⚠ Mot de passe inchangé depuis <strong>{ageInDays(user.daysSincePasswordChange)}</strong>
+          {user.lastPasswordChangeDateTime &&
+            ` (dernier changement le ${fmtDate(user.lastPasswordChangeDateTime)})`}
+          . Prendre contact avec l'utilisateur pour qu'il le renouvelle.
+        </WarnBanner>
+      )}
+
       <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <div className="card">
           <h3 className="section-title">Profil</h3>
@@ -52,6 +71,28 @@ export default function UserDetail() {
               <Row
                 k="Compte"
                 v={user.accountEnabled ? <span className="chip green">Actif</span> : <span className="chip red">Désactivé</span>}
+              />
+              <Row
+                k="Dernier chgt MdP"
+                v={
+                  user.lastPasswordChangeDateTime ? (
+                    <>
+                      {fmtDate(user.lastPasswordChangeDateTime)}{" "}
+                      <span className="muted">({relativeTime(user.lastPasswordChangeDateTime)})</span>
+                    </>
+                  ) : (
+                    <span className="muted">Non communiqué par Entra ID</span>
+                  )
+                }
+              />
+              <Row
+                k="État du mot de passe"
+                v={
+                  <>
+                    <PasswordChip user={user} />{" "}
+                    <span className="muted">{passwordLabel(user.passwordStatus)}</span>
+                  </>
+                }
               />
             </tbody>
           </table>

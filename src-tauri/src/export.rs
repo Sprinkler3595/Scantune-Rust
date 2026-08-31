@@ -185,7 +185,7 @@ pub fn export_devices_xlsx(devices: &[IntuneDevice], path: &str) -> Result<()> {
 
 // --- Excel : utilisateurs ---
 
-pub fn export_users_xlsx(users: &[EntraUser], path: &str) -> Result<()> {
+pub fn export_users_xlsx(users: &[EntraUser], path: &str, password_max_age_days: i64) -> Result<()> {
     let mut wb = Workbook::new();
     let ws = wb.add_worksheet();
     ws.set_name("Utilisateurs")?;
@@ -193,9 +193,12 @@ pub fn export_users_xlsx(users: &[EntraUser], path: &str) -> Result<()> {
     let header_fmt = Format::new().set_bold().set_background_color(Color::RGB(0xE8EAF6));
     let red = Format::new().set_font_color(Color::RGB(0xFF0000));
 
+    let orange = Format::new().set_font_color(Color::RGB(0xE65100));
+
     let headers = [
         "Nom", "UPN", "Email", "Poste", "Département", "Société",
         "Téléphone", "Compte actif", "Nb devices",
+        "Dernier chgt mot de passe", "Ancienneté MdP (j)", "Alerte MdP",
     ];
     for (c, h) in headers.iter().enumerate() {
         ws.write_with_format(0, c as u16, *h, &header_fmt)?;
@@ -216,6 +219,24 @@ pub fn export_users_xlsx(users: &[EntraUser], path: &str) -> Result<()> {
             ws.write_with_format(row, 7, "Non", &red)?;
         }
         ws.write(row, 8, u.device_count() as u32)?;
+
+        // Suivi du mot de passe : date, ancienneté et verdict lisible.
+        match u.last_password_change_date_time {
+            Some(ts) => ws.write(row, 9, ts.format("%d.%m.%Y").to_string())?,
+            None => ws.write(row, 9, "Inconnu")?,
+        };
+        let days = u.days_since_password_change();
+        if days >= 0 {
+            ws.write(row, 10, days as f64)?;
+        } else {
+            ws.write(row, 10, "")?;
+        }
+        match u.password_status(password_max_age_days) {
+            "Alert" => ws.write_with_format(row, 11, "À CONTACTER", &red)?,
+            "Warning" => ws.write_with_format(row, 11, "Bientôt", &orange)?,
+            "Unknown" => ws.write(row, 11, "Inconnu")?,
+            _ => ws.write(row, 11, "OK")?,
+        };
     }
     ws.autofit();
     wb.save(path).context("Sauvegarde XLSX utilisateurs")?;

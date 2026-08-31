@@ -6,6 +6,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::models::DEFAULT_PASSWORD_MAX_AGE_DAYS;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
@@ -13,6 +15,9 @@ pub struct AppConfig {
     pub client_id: String,
     pub scopes: Vec<String>,
     pub read_only_mode: bool,
+    /// Ancienneté maximale d'un mot de passe (en jours) avant alerte.
+    /// 180 j ≈ 6 mois par défaut, conformément à la politique interne.
+    pub password_max_age_days: i64,
 }
 
 impl Default for AppConfig {
@@ -27,6 +32,7 @@ impl Default for AppConfig {
                 "DeviceManagementConfiguration.Read.All".into(),
             ],
             read_only_mode: true,
+            password_max_age_days: DEFAULT_PASSWORD_MAX_AGE_DAYS,
         }
     }
 }
@@ -54,16 +60,25 @@ struct AzureAdSection {
 struct AppSection {
     #[serde(rename = "readOnlyMode", default = "default_true")]
     read_only_mode: bool,
+    #[serde(rename = "passwordMaxAgeDays", default = "default_password_max_age")]
+    password_max_age_days: i64,
 }
 
 impl Default for AppSection {
     fn default() -> Self {
-        Self { read_only_mode: true }
+        Self {
+            read_only_mode: true,
+            password_max_age_days: DEFAULT_PASSWORD_MAX_AGE_DAYS,
+        }
     }
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_password_max_age() -> i64 {
+    DEFAULT_PASSWORD_MAX_AGE_DAYS
 }
 
 pub fn config_path() -> PathBuf {
@@ -92,9 +107,15 @@ pub fn load() -> AppConfig {
             .filter(|s| !s.is_empty())
             .collect(),
         read_only_mode: file.app.read_only_mode,
+        password_max_age_days: file.app.password_max_age_days,
     };
     if cfg.scopes.is_empty() {
         cfg.scopes = AppConfig::default().scopes;
+    }
+    // Un seuil nul ou négatif désactiverait toute alerte sans le dire :
+    // on retombe sur la valeur par défaut.
+    if cfg.password_max_age_days <= 0 {
+        cfg.password_max_age_days = DEFAULT_PASSWORD_MAX_AGE_DAYS;
     }
     cfg
 }
@@ -108,6 +129,7 @@ pub fn save(cfg: &AppConfig) -> Result<()> {
         },
         app: AppSection {
             read_only_mode: cfg.read_only_mode,
+            password_max_age_days: cfg.password_max_age_days,
         },
     };
     let path = config_path();
