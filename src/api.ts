@@ -45,7 +45,29 @@ export interface EntraUser {
   companyName: string;
   mobilePhone: string;
   accountEnabled: boolean;
+  /** `lastPasswordChangeDateTime` — null si Entra ID ne la fournit pas. */
+  lastPasswordChangeDateTime: string | null;
   devices: IntuneDevice[];
+  // propriétés calculées (enrich)
+  /** Ancienneté du mot de passe en jours ; -1 si date inconnue. */
+  daysSincePasswordChange: number;
+  /** "Unknown" | "Ok" | "Warning" | "Alert" */
+  passwordStatus: PasswordStatus;
+  /** Vrai quand le seuil est dépassé : contacter l'utilisateur. */
+  passwordAlert: boolean;
+  deviceCount: number;
+}
+
+export type PasswordStatus = "Unknown" | "Ok" | "Warning" | "Alert";
+
+export interface PasswordAlertStats {
+  maxAgeDays: number;
+  total: number;
+  alertCount: number;
+  warningCount: number;
+  unknownCount: number;
+  /** Alertes puis avertissements, du mot de passe le plus ancien au plus récent. */
+  users: EntraUser[];
 }
 
 export interface DetectedApp {
@@ -70,6 +92,8 @@ export interface AppConfig {
   clientId: string;
   scopes: string[];
   readOnlyMode: boolean;
+  /** Ancienneté maximale d'un mot de passe avant alerte (180 j ≈ 6 mois). */
+  passwordMaxAgeDays: number;
 }
 
 export interface AuthStatus {
@@ -112,6 +136,8 @@ export const api = {
   getUsers: (force = false) => invoke<EntraUser[]>("get_users", { force }),
   getUser: (id: string) => invoke<EntraUser | null>("get_user", { id }),
   searchUsers: (query: string) => invoke<EntraUser[]>("search_users", { query }),
+  passwordAlerts: (force = false) =>
+    invoke<PasswordAlertStats>("password_alerts", { force }),
 
   getDeviceApps: (deviceId: string) =>
     invoke<DetectedApp[]>("get_device_apps", { deviceId }),

@@ -1,4 +1,5 @@
-import { IntuneDevice } from "../api";
+import { ReactNode } from "react";
+import { EntraUser, IntuneDevice, PasswordStatus } from "../api";
 
 export function fmtBytes(bytes: number): string {
   if (bytes <= 0) return "—";
@@ -122,6 +123,58 @@ export function SyncChip({ device }: { device: IntuneDevice }) {
   if (d <= 7) return <span className="chip green">{d} j</span>;
   if (d <= 30) return <span className="chip orange">{d} j</span>;
   return <span className="chip red">{d} j</span>;
+}
+
+// --- Mot de passe : ancienneté & alerte ---
+
+/** "5 mois", "1 an et 2 mois", "12 jours" — à partir d'un nombre de jours. */
+export function ageInDays(days: number): string {
+  if (days < 0) return "inconnu";
+  if (days < 31) return `${days} jour${days > 1 ? "s" : ""}`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} mois`;
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  const y = `${years} an${years > 1 ? "s" : ""}`;
+  return rest > 0 ? `${y} et ${rest} mois` : y;
+}
+
+/** Libellé lisible de l'état du mot de passe. */
+export function passwordLabel(status: PasswordStatus): string {
+  switch (status) {
+    case "Alert":
+      return "À renouveler";
+    case "Warning":
+      return "Bientôt";
+    case "Ok":
+      return "OK";
+    default:
+      return "Inconnu";
+  }
+}
+
+/**
+ * Pastille d'ancienneté du mot de passe.
+ * Rouge = seuil dépassé (contacter l'utilisateur), orange = échéance proche,
+ * gris = Entra ID ne fournit pas la date.
+ */
+export function PasswordChip({ user }: { user: EntraUser }) {
+  const age = ageInDays(user.daysSincePasswordChange);
+  switch (user.passwordStatus) {
+    case "Alert":
+      return <span className="chip red">⚠ {age}</span>;
+    case "Warning":
+      return <span className="chip orange">{age}</span>;
+    case "Ok":
+      return <span className="chip green">{age}</span>;
+    default:
+      return <span className="chip grey">Inconnu</span>;
+  }
+}
+
+/** Bandeau d'avertissement (orange), pendant de `ErrorBanner`. */
+export function WarnBanner({ children }: { children: ReactNode }) {
+  return <div className="warn-banner">{children}</div>;
 }
 
 export function Loading({ what = "Chargement…" }: { what?: string }) {

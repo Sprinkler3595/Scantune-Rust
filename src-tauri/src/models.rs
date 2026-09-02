@@ -5,6 +5,12 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Ancienneté maximale d'un mot de passe avant alerte : 180 j ≈ 6 mois.
+pub const DEFAULT_PASSWORD_MAX_AGE_DAYS: i64 = 180;
+/// Nombre de jours avant le seuil où l'on passe déjà en avertissement,
+/// pour laisser le temps de contacter l'utilisateur avant l'échéance.
+pub const PASSWORD_WARNING_LEAD_DAYS: i64 = 30;
+
 /// Appareil géré Intune (brut, tel que mappé depuis Graph).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -144,6 +150,10 @@ pub struct EntraUser {
     pub company_name: String,
     pub mobile_phone: String,
     pub account_enabled: bool,
+    /// Dernier changement de mot de passe (`lastPasswordChangeDateTime`).
+    /// `None` = jamais renseigné par Entra ID (comptes synchronisés depuis un
+    /// AD local, comptes de service, tenant qui ne remonte pas la propriété).
+    pub last_password_change_date_time: Option<DateTime<Utc>>,
     #[serde(default)]
     pub devices: Vec<IntuneDevice>,
 }
@@ -152,6 +162,64 @@ impl EntraUser {
     pub fn device_count(&self) -> usize {
         self.devices.len()
     }
+
+    /// Ancienneté du mot de passe en jours ; -1 si la date est inconnue.
+    pub fn days_since_password_change(&self) -> i64 {
+        match self.last_password_change_date_time {
+            None => -1,
+            Some(ts) => (Utc::now() - ts).num_days().max(0),
+        }
+    }
+
+    /// `Unknown` (date absente) | `Ok` | `Warning` (échéance proche) |
+    /// `Alert` (seuil dépassé — il faut contacter l'utilisateur).
+    pub fn password_status(&self, max_age_days: i64) -> &'static str {
+        let max_age = if max_age_days > 0 {
+            max_age_days
+        } else {
+            DEFAULT_PASSWORD_MAX_AGE_DAYS
+        };
+        let days = self.days_since_password_change();
+        if days < 0 {
+            return "Unknown";
+        }
+        if days >= max_age {
+            "Alert"
+        } else if days >= (max_age - PASSWORD_WARNING_LEAD_DAYS).max(0) {
+            "Warning"
+        } else {
+            "Ok"
+        }
+    }
+
+    /// Vrai quand le seuil est franchi : l'utilisateur doit être contacté.
+    pub fn password_alert(&self, max_age_days: i64) -> bool {
+        self.password_status(max_age_days) == "Alert"
+    }
+
+    /// Vue enrichie envoyée au frontend (champs + propriétés calculées),
+    /// même principe que `IntuneDevice::enrich`.
+    pub fn enrich(&self, max_age_days: i64) -> EntraUserView {
+        EntraUserView {
+            days_since_password_change: self.days_since_password_change(),
+            password_status: self.password_status(max_age_days).to_string(),
+            password_alert: self.password_alert(max_age_days),
+            device_count: self.device_count(),
+            user: self.clone(),
+        }
+    }
+}
+
+/// Vue à plat pour le frontend : l'utilisateur + ses propriétés calculées.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntraUserView {
+    #[serde(flatten)]
+    pub user: EntraUser,
+    pub days_since_password_change: i64,
+    pub password_status: String,
+    pub password_alert: bool,
+    pub device_count: usize,
 }
 
 /// Application détectée sur un appareil (endpoint Graph `detectedApps`).
@@ -177,4 +245,51 @@ pub struct BitLockerRecoveryKey {
     pub volume_type: String,
     pub created_date_time: Option<DateTime<Utc>>,
     pub key: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    fn user_with_password_age(days: i64) -> EntraUser {
+        EntraUser {
+            last_password_change_date_time: Some(Utc::now() - Duration::days(days)),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn password_status_follows_threshold() {
+        let max = DEFAULT_PASSWORD_MAX_AGE_DAYS; // 180 j ≈ 6 mois
+        assert_eq!(user_with_password_age(10).password_status(max), "Ok");
+        // 30 jours avant l'échéance : on prévient déjà.
+        assert_eq!(user_with_password_age(155).password_status(max), "Warning");
+        assert_eq!(user_with_password_age(181).password_status(max), "Alert");
+        assert!(user_with_password_age(200).password_alert(max));
+        assert!(!user_with_password_age(30).password_alert(max));
+    }
+
+    #[test]
+    fn password_status_unknown_when_date_missing() {
+        let u = EntraUser::default();
+        assert_eq!(u.days_since_password_change(), -1);
+        assert_eq!(u.password_status(DEFAULT_PASSWORD_MAX_AGE_DAYS), "Unknown");
+        assert!(!u.password_alert(DEFAULT_PASSWORD_MAX_AGE_DAYS));
+    }
+
+    #[test]
+    fn password_status_falls_back_on_invalid_threshold() {
+        // Un seuil <= 0 ne doit pas rendre tout le parc « en alerte ».
+        assert_eq!(user_with_password_age(10).password_status(0), "Ok");
+        assert_eq!(user_with_password_age(365).password_status(-5), "Alert");
+    }
+
+    #[test]
+    fn enrich_exposes_computed_fields() {
+        let view = user_with_password_age(200).enrich(DEFAULT_PASSWORD_MAX_AGE_DAYS);
+        assert_eq!(view.password_status, "Alert");
+        assert!(view.password_alert);
+        assert_eq!(view.days_since_password_change, 200);
+    }
 }

@@ -12,13 +12,21 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { api, DashboardStats } from "../api";
-import { ComplianceChip, ErrorBanner, Loading, SyncChip } from "../components/common";
+import { api, DashboardStats, PasswordAlertStats } from "../api";
+import {
+  ComplianceChip,
+  ErrorBanner,
+  Loading,
+  PasswordChip,
+  SyncChip,
+  fmtDate,
+} from "../components/common";
 
 const OS_COLORS = ["#3f51b5", "#00897b", "#fb8c00", "#8e24aa", "#43a047", "#e53935", "#6d4c41"];
 
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [pwd, setPwd] = useState<PasswordAlertStats | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const nav = useNavigate();
@@ -31,6 +39,12 @@ export default function Dashboard() {
       .then(setStats)
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
+    // Requête séparée (appareils vs utilisateurs) : un échec côté mots de
+    // passe ne doit pas vider le reste du tableau de bord.
+    api
+      .passwordAlerts(force)
+      .then(setPwd)
+      .catch(() => setPwd(null));
   };
 
   useEffect(() => {
@@ -79,6 +93,14 @@ export default function Dashboard() {
               <div className="label">Obsolètes (&gt;30j)</div>
               <div className="value">{stats.stale}</div>
             </div>
+            {pwd && (
+              <div className={pwd.alertCount > 0 ? "kpi red" : "kpi green"}>
+                <div className="label">
+                  Mots de passe &gt; {Math.round(pwd.maxAgeDays / 30)} mois
+                </div>
+                <div className="value">{pwd.alertCount}</div>
+              </div>
+            )}
           </div>
 
           <div className="grid charts">
@@ -172,6 +194,59 @@ export default function Dashboard() {
               </table>
             </div>
           </div>
+          {pwd && (
+            <div className="card" style={{ marginBottom: 22 }}>
+              <div className="row">
+                <h3 className="section-title" style={{ margin: 0 }}>
+                  Mots de passe à renouveler
+                </h3>
+                <div className="spacer" />
+                <span className="muted" style={{ fontSize: 13 }}>
+                  seuil : {pwd.maxAgeDays} j · {pwd.warningCount} échéance(s) proche(s) ·{" "}
+                  {pwd.unknownCount} date(s) inconnue(s)
+                </span>
+              </div>
+              <table style={{ marginTop: 12 }}>
+                <thead>
+                  <tr>
+                    <th>Utilisateur</th>
+                    <th>Email</th>
+                    <th>Département</th>
+                    <th>Dernier changement</th>
+                    <th>Ancienneté</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pwd.users.slice(0, 15).map((u) => (
+                    <tr key={u.id} onClick={() => nav(`/users/${u.id}`)}>
+                      <td>{u.displayName}</td>
+                      <td>{u.mail || u.userPrincipalName}</td>
+                      <td>{u.department || "—"}</td>
+                      <td>{fmtDate(u.lastPasswordChangeDateTime)}</td>
+                      <td>
+                        <PasswordChip user={u} />
+                      </td>
+                    </tr>
+                  ))}
+                  {pwd.users.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="muted center">
+                        Tous les mots de passe sont à jour 🎉
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+              {pwd.users.length > 15 && (
+                <p className="muted" style={{ marginTop: 10 }}>
+                  … et {pwd.users.length - 15} autre(s) —{" "}
+                  <button className="link-btn" onClick={() => nav("/users")}>
+                    voir tous les utilisateurs
+                  </button>
+                </p>
+              )}
+            </div>
+          )}
         </>
       )}
     </>

@@ -11,7 +11,10 @@ use crate::config::{self, AppConfig};
 use crate::export;
 use crate::graph::GraphClient;
 use crate::label_template::{self, LabelTemplate};
-use crate::models::{BitLockerRecoveryKey, DetectedApp, EntraUser, IntuneDevice, IntuneDeviceView};
+use crate::models::{
+    BitLockerRecoveryKey, DetectedApp, EntraUser, EntraUserView, IntuneDevice, IntuneDeviceView,
+    DEFAULT_PASSWORD_MAX_AGE_DAYS,
+};
 use crate::qr;
 
 const CACHE_TTL: Duration = Duration::from_secs(300); // 5 min, comme le C#
@@ -45,6 +48,11 @@ impl AppState {
     fn config_snapshot(&self) -> AppConfig {
         self.config.lock().unwrap().clone()
     }
+
+    /// Seuil d'alerte sur l'ancienneté des mots de passe, en jours.
+    fn password_max_age(&self) -> i64 {
+        self.config.lock().unwrap().password_max_age_days
+    }
 }
 
 type CmdResult<T> = Result<T, String>;
@@ -72,7 +80,12 @@ pub fn get_config(state: State<AppState>) -> AppConfig {
 }
 
 #[tauri::command]
-pub fn save_config(state: State<AppState>, config: AppConfig) -> CmdResult<()> {
+pub fn save_config(state: State<AppState>, mut config: AppConfig) -> CmdResult<()> {
+    // Un seuil nul ou négatif désactiverait silencieusement les alertes de mot
+    // de passe : on retombe sur la valeur par défaut (180 j ≈ 6 mois).
+    if config.password_max_age_days <= 0 {
+        config.password_max_age_days = DEFAULT_PASSWORD_MAX_AGE_DAYS;
+    }
     config::save(&config).map_err(err)?;
     *state.config.lock().unwrap() = config;
     // La config a changé → on vide le cache et la session.
@@ -172,12 +185,17 @@ async fn load_users(state: &AppState, force: bool) -> Result<Vec<EntraUser>, Str
 }
 
 #[tauri::command]
-pub async fn get_users(state: State<'_, AppState>, force: Option<bool>) -> CmdResult<Vec<EntraUser>> {
-    load_users(&state, force.unwrap_or(false)).await
+pub async fn get_users(
+    state: State<'_, AppState>,
+    force: Option<bool>,
+) -> CmdResult<Vec<EntraUserView>> {
+    let max_age = state.password_max_age();
+    let users = load_users(&state, force.unwrap_or(false)).await?;
+    Ok(users.iter().map(|u| u.enrich(max_age)).collect())
 }
 
 #[tauri::command]
-pub async fn get_user(state: State<'_, AppState>, id: String) -> CmdResult<Option<EntraUser>> {
+pub async fn get_user(state: State<'_, AppState>, id: String) -> CmdResult<Option<EntraUserView>> {
     let cfg = state.config_snapshot();
     let client = GraphClient::new(&state.auth, &cfg, state.http.clone());
     let user = client.user_by_id(&id).await.map_err(err)?;
@@ -185,14 +203,82 @@ pub async fn get_user(state: State<'_, AppState>, id: String) -> CmdResult<Optio
         return Ok(None);
     };
     user.devices = client.user_devices(&id).await.unwrap_or_default();
-    Ok(Some(user))
+    Ok(Some(user.enrich(cfg.password_max_age_days)))
 }
 
 #[tauri::command]
-pub async fn search_users(state: State<'_, AppState>, query: String) -> CmdResult<Vec<EntraUser>> {
+pub async fn search_users(
+    state: State<'_, AppState>,
+    query: String,
+) -> CmdResult<Vec<EntraUserView>> {
     let cfg = state.config_snapshot();
     let client = GraphClient::new(&state.auth, &cfg, state.http.clone());
-    client.search_users(&query).await.map_err(err)
+    let users = client.search_users(&query).await.map_err(err)?;
+    Ok(users
+        .iter()
+        .map(|u| u.enrich(cfg.password_max_age_days))
+        .collect())
+}
+
+// --- Mots de passe : ancienneté & alertes ---
+
+/// Synthèse des mots de passe du tenant : compteurs + liste des comptes à
+/// contacter (seuil dépassé ou échéance proche), du plus ancien au plus récent.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasswordAlertStats {
+    /// Seuil configuré, en jours (180 = 6 mois par défaut).
+    pub max_age_days: i64,
+    /// Comptes actifs pris en compte.
+    pub total: usize,
+    /// Seuil dépassé : il faut contacter l'utilisateur.
+    pub alert_count: usize,
+    /// Échéance proche (moins de 30 j avant le seuil).
+    pub warning_count: usize,
+    /// Date de dernier changement inconnue (souvent des comptes synchronisés).
+    pub unknown_count: usize,
+    /// Alertes puis avertissements, triés par ancienneté décroissante.
+    pub users: Vec<EntraUserView>,
+}
+
+#[tauri::command]
+pub async fn password_alerts(
+    state: State<'_, AppState>,
+    force: Option<bool>,
+) -> CmdResult<PasswordAlertStats> {
+    let max_age_days = state.password_max_age();
+    let users = load_users(&state, force.unwrap_or(false)).await?;
+
+    // Les comptes désactivés ne sont contactés par personne : on les ignore.
+    let active: Vec<&EntraUser> = users.iter().filter(|u| u.account_enabled).collect();
+
+    let mut alerting: Vec<EntraUserView> = Vec::new();
+    let (mut alert_count, mut warning_count, mut unknown_count) = (0, 0, 0);
+    for u in &active {
+        let view = u.enrich(max_age_days);
+        match view.password_status.as_str() {
+            "Alert" => {
+                alert_count += 1;
+                alerting.push(view);
+            }
+            "Warning" => {
+                warning_count += 1;
+                alerting.push(view);
+            }
+            "Unknown" => unknown_count += 1,
+            _ => {}
+        }
+    }
+    alerting.sort_by(|a, b| b.days_since_password_change.cmp(&a.days_since_password_change));
+
+    Ok(PasswordAlertStats {
+        max_age_days,
+        total: active.len(),
+        alert_count,
+        warning_count,
+        unknown_count,
+        users: alerting,
+    })
 }
 
 // --- Applications détectées ---
@@ -387,8 +473,9 @@ pub async fn export_devices_xlsx(
 
 #[tauri::command]
 pub async fn export_users_xlsx(state: State<'_, AppState>, path: String) -> CmdResult<()> {
+    let max_age = state.password_max_age();
     let users = load_users(&state, false).await?;
-    export::export_users_xlsx(&users, &path).map_err(err)
+    export::export_users_xlsx(&users, &path, max_age).map_err(err)
 }
 
 #[tauri::command]
