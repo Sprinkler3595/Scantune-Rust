@@ -1,13 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { api, EntraUser } from "../api";
-import {
-  ErrorBanner,
-  Loading,
-  PasswordChip,
-  WarnBanner,
-  fmtDate,
-} from "../components/common";
+import { ErrorBanner, Loading, PasswordChip, fmtDate } from "../components/common";
 
 export default function Users() {
   const [users, setUsers] = useState<EntraUser[]>([]);
@@ -38,12 +32,6 @@ export default function Users() {
 
   const depts = useMemo(
     () => [...new Set(users.map((u) => u.department).filter(Boolean))].sort(),
-    [users]
-  );
-
-  /** Comptes actifs dont le mot de passe a dépassé le seuil. */
-  const alertCount = useMemo(
-    () => users.filter((u) => u.accountEnabled && u.passwordAlert).length,
     [users]
   );
 
@@ -102,17 +90,6 @@ export default function Users() {
       </div>
 
       {error && <ErrorBanner message={error} />}
-      {!loading && alertCount > 0 && (
-        <WarnBanner>
-          ⚠ <strong>{alertCount}</strong> compte(s) actif(s) n'ont pas changé de mot de
-          passe depuis plus de {months} mois — à contacter.{" "}
-          {pwd !== "alert" && (
-            <button className="link-btn" onClick={() => setPwd("alert")}>
-              Voir la liste
-            </button>
-          )}
-        </WarnBanner>
-      )}
 
       {loading ? (
         <Loading what="Chargement des utilisateurs…" />

@@ -94,9 +94,9 @@ Où cela apparaît :
 
 - **Tableau de bord** : un compteur « Mots de passe > 6 mois » et la liste des
   comptes à contacter, du plus ancien au plus récent (comptes désactivés exclus).
-- **Utilisateurs** : colonnes *Dernier chgt MdP* / *Ancienneté MdP*, filtre
-  dédié (à renouveler / échéance proche / date inconnue) et bandeau
-  d'avertissement indiquant le nombre de comptes concernés.
+- **Utilisateurs** : colonnes *Dernier chgt MdP* / *Ancienneté MdP* sur la
+  ligne de chaque utilisateur recherché, plus un filtre dédié (à renouveler /
+  échéance proche / date inconnue).
 - **Fiche utilisateur** : date du dernier changement, ancienneté relative et
   bandeau d'alerte quand le seuil est franchi.
 - **Export Excel des utilisateurs** : colonnes *Dernier chgt mot de passe*,
